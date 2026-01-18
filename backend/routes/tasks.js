@@ -1,0 +1,264 @@
+const express = require('express');
+const db = require('../config/database');
+const { authMiddleware, requireRole } = require('../middleware/auth');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+const router = express.Router();
+
+// Multer Setup für Foto-Upload
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = process.env.UPLOAD_PATH || './uploads';
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'task-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb('Error: Nur Bilder erlaubt!');
+    }
+  }
+});
+
+// Aufgaben für einen bestimmten Tag und Store abrufen
+router.get('/', authMiddleware, (req, res) => {
+  try {
+    const { store_id, date, shift, status } = req.query;
+
+    let query = `
+      SELECT t.*, tt.category, tt.requires_photo,
+             u.full_name as completed_by_name
+      FROM tasks t
+      LEFT JOIN task_templates tt ON t.template_id = tt.id
+      LEFT JOIN users u ON t.completed_by = u.id
+      WHERE 1=1
+    `;
+
+    const params = [];
+
+    if (store_id) {
+      query += ' AND t.store_id = ?';
+      params.push(store_id);
+    } else if (req.user.role !== 'admin') {
+      query += ' AND t.store_id = ?';
+      params.push(req.user.store_id);
+    }
+
+    if (date) {
+      query += ' AND t.due_date = ?';
+      params.push(date);
+    }
+
+    if (shift) {
+      query += ' AND t.shift = ?';
+      params.push(shift);
+    }
+
+    if (status) {
+      query += ' AND t.status = ?';
+      params.push(status);
+    }
+
+    query += ' ORDER BY t.due_date DESC, t.shift, t.title';
+
+    const tasks = db.prepare(query).all(...params);
+
+    res.json(tasks);
+  } catch (error) {
+    res.status(500).json({ message: 'Serverfehler', error: error.message });
+  }
+});
+
+// Aufgabe als erledigt markieren
+router.put('/:id/complete', authMiddleware, upload.single('photo'), (req, res) => {
+  try {
+    const { notes } = req.body;
+    const taskId = req.params.id;
+
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+
+    if (!task) {
+      return res.status(404).json({ message: 'Aufgabe nicht gefunden' });
+    }
+
+    // Berechtigung prüfen
+    if (req.user.role !== 'admin' && req.user.store_id !== task.store_id) {
+      return res.status(403).json({ message: 'Keine Berechtigung' });
+    }
+
+    const photoPath = req.file ? req.file.filename : null;
+
+    db.prepare(`
+      UPDATE tasks
+      SET status = 'completed',
+          completed_by = ?,
+          completed_at = CURRENT_TIMESTAMP,
+          photo_path = ?,
+          notes = ?
+      WHERE id = ?
+    `).run(req.user.id, photoPath, notes, taskId);
+
+    const updatedTask = db.prepare(`
+      SELECT t.*, tt.category, tt.requires_photo,
+             u.full_name as completed_by_name
+      FROM tasks t
+      LEFT JOIN task_templates tt ON t.template_id = tt.id
+      LEFT JOIN users u ON t.completed_by = u.id
+      WHERE t.id = ?
+    `).get(taskId);
+
+    res.json(updatedTask);
+  } catch (error) {
+    res.status(500).json({ message: 'Serverfehler', error: error.message });
+  }
+});
+
+// Dashboard-Statistiken
+router.get('/stats/dashboard', authMiddleware, requireRole('admin', 'manager'), (req, res) => {
+  try {
+    const { start_date, end_date, store_id } = req.query;
+
+    let storeCondition = '';
+    const params = [start_date, end_date];
+
+    if (store_id) {
+      storeCondition = 'AND t.store_id = ?';
+      params.push(store_id);
+    } else if (req.user.role === 'manager') {
+      storeCondition = 'AND t.store_id = ?';
+      params.push(req.user.store_id);
+    }
+
+    // Gesamt-Statistiken
+    const totalStats = db.prepare(`
+      SELECT
+        COUNT(*) as total_tasks,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_tasks,
+        SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) as skipped_tasks
+      FROM tasks t
+      WHERE t.due_date BETWEEN ? AND ?
+      ${storeCondition}
+    `).get(...params);
+
+    // Statistiken pro Store
+    const storeStats = db.prepare(`
+      SELECT
+        s.id,
+        s.name,
+        COUNT(t.id) as total_tasks,
+        SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) as completed_tasks,
+        SUM(CASE WHEN t.status = 'pending' THEN 1 ELSE 0 END) as pending_tasks,
+        ROUND(CAST(SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(t.id) * 100, 2) as completion_rate
+      FROM stores s
+      LEFT JOIN tasks t ON s.id = t.store_id AND t.due_date BETWEEN ? AND ?
+      ${store_id ? 'WHERE s.id = ?' : req.user.role === 'manager' ? 'WHERE s.id = ?' : ''}
+      GROUP BY s.id
+      ORDER BY s.name
+    `).all(...(store_id ? [start_date, end_date, store_id] : req.user.role === 'manager' ? [start_date, end_date, req.user.store_id] : [start_date, end_date]));
+
+    // Statistiken pro Mitarbeiter
+    const employeeStatsQuery = `
+      SELECT
+        u.id,
+        u.full_name,
+        s.name as store_name,
+        COUNT(t.id) as completed_tasks,
+        COUNT(DISTINCT DATE(t.completed_at)) as active_days
+      FROM users u
+      LEFT JOIN tasks t ON u.id = t.completed_by AND t.completed_at BETWEEN ? AND ?
+      LEFT JOIN stores s ON u.store_id = s.id
+      WHERE u.role = 'employee'
+      ${store_id ? 'AND u.store_id = ?' : req.user.role === 'manager' ? 'AND u.store_id = ?' : ''}
+      GROUP BY u.id
+      ORDER BY completed_tasks DESC
+      LIMIT 10
+    `;
+
+    const employeeStats = db.prepare(employeeStatsQuery).all(
+      ...(store_id ? [start_date, end_date, store_id] : req.user.role === 'manager' ? [start_date, end_date, req.user.store_id] : [start_date, end_date])
+    );
+
+    res.json({
+      totalStats,
+      storeStats,
+      employeeStats
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Serverfehler', error: error.message });
+  }
+});
+
+// Tägliche Tasks generieren
+router.post('/generate', authMiddleware, requireRole('admin', 'manager'), (req, res) => {
+  try {
+    const { date, store_id } = req.body;
+
+    // Berechtigung prüfen
+    if (req.user.role === 'manager' && store_id !== req.user.store_id) {
+      return res.status(403).json({ message: 'Keine Berechtigung' });
+    }
+
+    const dateObj = new Date(date);
+    const dayOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][dateObj.getDay()];
+
+    // Hole relevante Templates
+    const templates = db.prepare(`
+      SELECT * FROM task_templates
+      WHERE (store_id IS NULL OR store_id = ?)
+      AND (
+        recurrence = 'daily'
+        OR (recurrence = 'weekly' AND recurrence_day = ?)
+        OR (recurrence = 'monthly' AND CAST(strftime('%d', ?) AS INTEGER) = CAST(recurrence_day AS INTEGER))
+      )
+    `).all(store_id, dayOfWeek, date);
+
+    const insertTask = db.prepare(`
+      INSERT INTO tasks (template_id, store_id, title, description, shift, due_date)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    let createdCount = 0;
+
+    templates.forEach(template => {
+      const shifts = template.shift === 'beide' ? ['frueh', 'spaet'] : [template.shift];
+
+      shifts.forEach(shift => {
+        // Prüfe ob Task bereits existiert
+        const existing = db.prepare(`
+          SELECT id FROM tasks
+          WHERE template_id = ? AND store_id = ? AND due_date = ? AND shift = ?
+        `).get(template.id, store_id, date, shift);
+
+        if (!existing) {
+          insertTask.run(template.id, store_id, template.title, template.description, shift, date);
+          createdCount++;
+        }
+      });
+    });
+
+    res.json({ message: `${createdCount} Aufgaben erstellt`, count: createdCount });
+  } catch (error) {
+    res.status(500).json({ message: 'Serverfehler', error: error.message });
+  }
+});
+
+module.exports = router;

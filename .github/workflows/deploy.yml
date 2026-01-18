@@ -1,0 +1,57 @@
+# Optional: GitHub Actions für automatische Tests vor Deployment
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Install Backend Dependencies
+      run: |
+        cd backend
+        npm ci
+
+    - name: Check Backend Syntax
+      run: |
+        cd backend
+        node -c server.js
+
+  test-frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Install Frontend Dependencies
+      run: |
+        cd frontend
+        npm ci
+
+    - name: Build Frontend
+      run: |
+        cd frontend
+        CI=false npm run build
+      env:
+        REACT_APP_API_URL: https://dummy.railway.app/api
+
+  # Railway und Vercel deployen automatisch bei Push zu main
+  # Dieser Workflow testet nur vor dem Deployment
