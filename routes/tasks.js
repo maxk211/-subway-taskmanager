@@ -39,7 +39,7 @@ const upload = multer({
 });
 
 // Aufgaben für einen bestimmten Tag und Store abrufen
-router.get('/', authMiddleware, (req, res) => {
+router.get('/', authMiddleware, async (req, res) => {
   try {
     const { store_id, date, shift, status } = req.query;
 
@@ -79,21 +79,22 @@ router.get('/', authMiddleware, (req, res) => {
 
     query += ' ORDER BY t.due_date DESC, t.shift, t.title';
 
-    const tasks = db.prepare(query).all(...params);
+    const tasks = await db.prepare(query).all(...params);
 
     res.json(tasks);
   } catch (error) {
+    console.error('Tasks error:', error);
     res.status(500).json({ message: 'Serverfehler', error: error.message });
   }
 });
 
 // Aufgabe als erledigt markieren
-router.put('/:id/complete', authMiddleware, upload.single('photo'), (req, res) => {
+router.put('/:id/complete', authMiddleware, upload.single('photo'), async (req, res) => {
   try {
     const { notes } = req.body;
     const taskId = req.params.id;
 
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+    const task = await db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
 
     if (!task) {
       return res.status(404).json({ message: 'Aufgabe nicht gefunden' });
@@ -106,7 +107,7 @@ router.put('/:id/complete', authMiddleware, upload.single('photo'), (req, res) =
 
     const photoPath = req.file ? req.file.filename : null;
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE tasks
       SET status = 'completed',
           completed_by = ?,
@@ -116,7 +117,7 @@ router.put('/:id/complete', authMiddleware, upload.single('photo'), (req, res) =
       WHERE id = ?
     `).run(req.user.id, photoPath, notes, taskId);
 
-    const updatedTask = db.prepare(`
+    const updatedTask = await db.prepare(`
       SELECT t.*, tt.category, tt.requires_photo,
              u.full_name as completed_by_name
       FROM tasks t
@@ -127,12 +128,13 @@ router.put('/:id/complete', authMiddleware, upload.single('photo'), (req, res) =
 
     res.json(updatedTask);
   } catch (error) {
+    console.error('Task complete error:', error);
     res.status(500).json({ message: 'Serverfehler', error: error.message });
   }
 });
 
 // Dashboard-Statistiken
-router.get('/stats/dashboard', authMiddleware, requireRole('admin', 'manager'), (req, res) => {
+router.get('/stats/dashboard', authMiddleware, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const { start_date, end_date, store_id } = req.query;
 
@@ -148,7 +150,7 @@ router.get('/stats/dashboard', authMiddleware, requireRole('admin', 'manager'), 
     }
 
     // Gesamt-Statistiken
-    const totalStats = db.prepare(`
+    const totalStats = await db.prepare(`
       SELECT
         COUNT(*) as total_tasks,
         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks,
@@ -160,14 +162,14 @@ router.get('/stats/dashboard', authMiddleware, requireRole('admin', 'manager'), 
     `).get(...params);
 
     // Statistiken pro Store
-    const storeStats = db.prepare(`
+    const storeStats = await db.prepare(`
       SELECT
         s.id,
         s.name,
         COUNT(t.id) as total_tasks,
         SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) as completed_tasks,
         SUM(CASE WHEN t.status = 'pending' THEN 1 ELSE 0 END) as pending_tasks,
-        ROUND(CAST(SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(t.id) * 100, 2) as completion_rate
+        ROUND(CAST(SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(COUNT(t.id), 0) * 100, 2) as completion_rate
       FROM stores s
       LEFT JOIN tasks t ON s.id = t.store_id AND t.due_date BETWEEN ? AND ?
       ${store_id ? 'WHERE s.id = ?' : req.user.role === 'manager' ? 'WHERE s.id = ?' : ''}
@@ -193,7 +195,7 @@ router.get('/stats/dashboard', authMiddleware, requireRole('admin', 'manager'), 
       LIMIT 10
     `;
 
-    const employeeStats = db.prepare(employeeStatsQuery).all(
+    const employeeStats = await db.prepare(employeeStatsQuery).all(
       ...(store_id ? [start_date, end_date, store_id] : req.user.role === 'manager' ? [start_date, end_date, req.user.store_id] : [start_date, end_date])
     );
 
@@ -203,12 +205,13 @@ router.get('/stats/dashboard', authMiddleware, requireRole('admin', 'manager'), 
       employeeStats
     });
   } catch (error) {
+    console.error('Dashboard stats error:', error);
     res.status(500).json({ message: 'Serverfehler', error: error.message });
   }
 });
 
 // Tägliche Tasks generieren
-router.post('/generate', authMiddleware, requireRole('admin', 'manager'), (req, res) => {
+router.post('/generate', authMiddleware, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const { date, store_id } = req.body;
 
@@ -221,42 +224,41 @@ router.post('/generate', authMiddleware, requireRole('admin', 'manager'), (req, 
     const dayOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][dateObj.getDay()];
 
     // Hole relevante Templates
-    const templates = db.prepare(`
+    const templates = await db.prepare(`
       SELECT * FROM task_templates
       WHERE (store_id IS NULL OR store_id = ?)
       AND (
         recurrence = 'daily'
         OR (recurrence = 'weekly' AND recurrence_day = ?)
-        OR (recurrence = 'monthly' AND CAST(strftime('%d', ?) AS INTEGER) = CAST(recurrence_day AS INTEGER))
+        OR (recurrence = 'monthly' AND CAST(EXTRACT(DAY FROM DATE ?) AS INTEGER) = CAST(recurrence_day AS INTEGER))
       )
     `).all(store_id, dayOfWeek, date);
 
-    const insertTask = db.prepare(`
-      INSERT INTO tasks (template_id, store_id, title, description, shift, due_date)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
     let createdCount = 0;
 
-    templates.forEach(template => {
+    for (const template of templates) {
       const shifts = template.shift === 'beide' ? ['frueh', 'spaet'] : [template.shift];
 
-      shifts.forEach(shift => {
+      for (const shift of shifts) {
         // Prüfe ob Task bereits existiert
-        const existing = db.prepare(`
+        const existing = await db.prepare(`
           SELECT id FROM tasks
           WHERE template_id = ? AND store_id = ? AND due_date = ? AND shift = ?
         `).get(template.id, store_id, date, shift);
 
         if (!existing) {
-          insertTask.run(template.id, store_id, template.title, template.description, shift, date);
+          await db.prepare(`
+            INSERT INTO tasks (template_id, store_id, title, description, shift, due_date)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(template.id, store_id, template.title, template.description, shift, date);
           createdCount++;
         }
-      });
-    });
+      }
+    }
 
     res.json({ message: `${createdCount} Aufgaben erstellt`, count: createdCount });
   } catch (error) {
+    console.error('Task generate error:', error);
     res.status(500).json({ message: 'Serverfehler', error: error.message });
   }
 });

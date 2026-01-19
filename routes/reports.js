@@ -41,7 +41,7 @@ router.get('/excel', authMiddleware, requireRole('admin', 'manager'), async (req
 
     query += ' ORDER BY t.due_date, s.name, t.shift';
 
-    const tasks = db.prepare(query).all(...params);
+    const tasks = await db.prepare(query).all(...params);
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Aufgaben Report');
@@ -84,12 +84,13 @@ router.get('/excel', authMiddleware, requireRole('admin', 'manager'), async (req
     await workbook.xlsx.write(res);
     res.end();
   } catch (error) {
+    console.error('Excel export error:', error);
     res.status(500).json({ message: 'Serverfehler', error: error.message });
   }
 });
 
 // PDF Export
-router.get('/pdf', authMiddleware, requireRole('admin', 'manager'), (req, res) => {
+router.get('/pdf', authMiddleware, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const { start_date, end_date, store_id } = req.query;
 
@@ -105,23 +106,23 @@ router.get('/pdf', authMiddleware, requireRole('admin', 'manager'), (req, res) =
       params.push(req.user.store_id);
     }
 
-    const stats = db.prepare(`
+    const stats = await db.prepare(`
       SELECT
         COUNT(*) as total_tasks,
         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_tasks,
-        ROUND(CAST(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*) * 100, 2) as completion_rate
+        ROUND(CAST(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(COUNT(*), 0) * 100, 2) as completion_rate
       FROM tasks t
       WHERE t.due_date BETWEEN ? AND ?
       ${storeCondition}
     `).get(...params);
 
-    const storeStats = db.prepare(`
+    const storeStats = await db.prepare(`
       SELECT
         s.name,
         COUNT(t.id) as total_tasks,
         SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) as completed_tasks,
-        ROUND(CAST(SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(t.id) * 100, 2) as completion_rate
+        ROUND(CAST(SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(COUNT(t.id), 0) * 100, 2) as completion_rate
       FROM stores s
       LEFT JOIN tasks t ON s.id = t.store_id AND t.due_date BETWEEN ? AND ?
       ${store_id ? 'WHERE s.id = ?' : req.user.role === 'manager' ? 'WHERE s.id = ?' : ''}
@@ -149,7 +150,7 @@ router.get('/pdf', authMiddleware, requireRole('admin', 'manager'), (req, res) =
     doc.text(`Gesamt Aufgaben: ${stats.total_tasks}`);
     doc.text(`Erledigte Aufgaben: ${stats.completed_tasks}`);
     doc.text(`Ausstehende Aufgaben: ${stats.pending_tasks}`);
-    doc.text(`Erledigungsrate: ${stats.completion_rate}%`);
+    doc.text(`Erledigungsrate: ${stats.completion_rate || 0}%`);
     doc.moveDown(2);
 
     // Store-Statistiken
@@ -159,12 +160,13 @@ router.get('/pdf', authMiddleware, requireRole('admin', 'manager'), (req, res) =
 
     storeStats.forEach(store => {
       doc.text(`${store.name}:`);
-      doc.text(`  Aufgaben: ${store.total_tasks} | Erledigt: ${store.completed_tasks} | Rate: ${store.completion_rate}%`);
+      doc.text(`  Aufgaben: ${store.total_tasks} | Erledigt: ${store.completed_tasks} | Rate: ${store.completion_rate || 0}%`);
       doc.moveDown(0.3);
     });
 
     doc.end();
   } catch (error) {
+    console.error('PDF export error:', error);
     res.status(500).json({ message: 'Serverfehler', error: error.message });
   }
 });

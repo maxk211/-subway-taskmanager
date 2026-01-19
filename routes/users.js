@@ -6,19 +6,19 @@ const { authMiddleware, requireRole } = require('../middleware/auth');
 const router = express.Router();
 
 // Alle Mitarbeiter abrufen
-router.get('/', authMiddleware, requireRole('admin', 'manager'), (req, res) => {
+router.get('/', authMiddleware, requireRole('admin', 'manager'), async (req, res) => {
   try {
     let users;
 
     if (req.user.role === 'admin') {
-      users = db.prepare(`
+      users = await db.prepare(`
         SELECT u.id, u.username, u.full_name, u.email, u.role, u.store_id, u.active, s.name as store_name
         FROM users u
         LEFT JOIN stores s ON u.store_id = s.id
         ORDER BY u.full_name
       `).all();
     } else if (req.user.role === 'manager') {
-      users = db.prepare(`
+      users = await db.prepare(`
         SELECT u.id, u.username, u.full_name, u.email, u.role, u.store_id, u.active, s.name as store_name
         FROM users u
         LEFT JOIN stores s ON u.store_id = s.id
@@ -29,12 +29,13 @@ router.get('/', authMiddleware, requireRole('admin', 'manager'), (req, res) => {
 
     res.json(users);
   } catch (error) {
+    console.error('Users error:', error);
     res.status(500).json({ message: 'Serverfehler', error: error.message });
   }
 });
 
 // Mitarbeiter erstellen
-router.post('/', authMiddleware, requireRole('admin', 'manager'), (req, res) => {
+router.post('/', authMiddleware, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const { username, password, full_name, email, role, store_id } = req.body;
 
@@ -50,30 +51,31 @@ router.post('/', authMiddleware, requireRole('admin', 'manager'), (req, res) => 
 
     const hashedPassword = bcrypt.hashSync(password, 10);
 
-    const result = db.prepare(`
+    const result = await db.prepare(`
       INSERT INTO users (username, password, full_name, email, role, store_id)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(username, hashedPassword, full_name, email, role, store_id);
 
-    const user = db.prepare(`
+    const user = await db.prepare(`
       SELECT u.id, u.username, u.full_name, u.email, u.role, u.store_id, s.name as store_name
       FROM users u
       LEFT JOIN stores s ON u.store_id = s.id
       WHERE u.id = ?
-    `).get(result.lastInsertRowid);
+    `).get(result.lastInsertRowid || result.insertId);
 
     res.status(201).json(user);
   } catch (error) {
+    console.error('User create error:', error);
     res.status(500).json({ message: 'Serverfehler', error: error.message });
   }
 });
 
 // Mitarbeiter aktualisieren
-router.put('/:id', authMiddleware, requireRole('admin', 'manager'), (req, res) => {
+router.put('/:id', authMiddleware, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const { full_name, email, active, store_id, role } = req.body;
 
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
 
     if (!user) {
       return res.status(404).json({ message: 'Mitarbeiter nicht gefunden' });
@@ -84,13 +86,13 @@ router.put('/:id', authMiddleware, requireRole('admin', 'manager'), (req, res) =
       return res.status(403).json({ message: 'Keine Berechtigung' });
     }
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE users
       SET full_name = ?, email = ?, active = ?, store_id = ?, role = ?
       WHERE id = ?
     `).run(full_name, email, active, store_id, role, req.params.id);
 
-    const updatedUser = db.prepare(`
+    const updatedUser = await db.prepare(`
       SELECT u.id, u.username, u.full_name, u.email, u.role, u.store_id, u.active, s.name as store_name
       FROM users u
       LEFT JOIN stores s ON u.store_id = s.id
@@ -99,12 +101,13 @@ router.put('/:id', authMiddleware, requireRole('admin', 'manager'), (req, res) =
 
     res.json(updatedUser);
   } catch (error) {
+    console.error('User update error:', error);
     res.status(500).json({ message: 'Serverfehler', error: error.message });
   }
 });
 
 // Passwort ändern
-router.put('/:id/password', authMiddleware, (req, res) => {
+router.put('/:id/password', authMiddleware, async (req, res) => {
   try {
     const { password } = req.body;
 
@@ -115,10 +118,11 @@ router.put('/:id/password', authMiddleware, (req, res) => {
 
     const hashedPassword = bcrypt.hashSync(password, 10);
 
-    db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, req.params.id);
+    await db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, req.params.id);
 
     res.json({ message: 'Passwort erfolgreich geändert' });
   } catch (error) {
+    console.error('Password change error:', error);
     res.status(500).json({ message: 'Serverfehler', error: error.message });
   }
 });
