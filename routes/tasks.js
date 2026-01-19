@@ -169,11 +169,11 @@ router.get('/stats/dashboard', authMiddleware, requireRole('admin', 'manager'), 
         COUNT(t.id) as total_tasks,
         SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) as completed_tasks,
         SUM(CASE WHEN t.status = 'pending' THEN 1 ELSE 0 END) as pending_tasks,
-        ROUND(CAST(SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(COUNT(t.id), 0) * 100, 2) as completion_rate
+        ROUND((SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END)::numeric / NULLIF(COUNT(t.id), 0) * 100)::numeric, 2) as completion_rate
       FROM stores s
       LEFT JOIN tasks t ON s.id = t.store_id AND t.due_date BETWEEN ? AND ?
       ${store_id ? 'WHERE s.id = ?' : req.user.role === 'manager' ? 'WHERE s.id = ?' : ''}
-      GROUP BY s.id
+      GROUP BY s.id, s.name
       ORDER BY s.name
     `).all(...(store_id ? [start_date, end_date, store_id] : req.user.role === 'manager' ? [start_date, end_date, req.user.store_id] : [start_date, end_date]));
 

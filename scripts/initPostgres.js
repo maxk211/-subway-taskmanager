@@ -89,15 +89,15 @@ async function initDatabase() {
 
       // Erstelle Stores
       const stores = [
-        { name: 'Subway Hauptbahnhof', city: 'München' },
-        { name: 'Subway Marienplatz', city: 'München' },
-        { name: 'Subway Sendlinger Tor', city: 'München' },
-        { name: 'Subway Karlsplatz', city: 'München' },
-        { name: 'Subway Ostbahnhof', city: 'München' },
-        { name: 'Subway Pasing', city: 'München' },
-        { name: 'Subway Neuperlach', city: 'München' },
-        { name: 'Subway Schwabing', city: 'München' },
-        { name: 'Subway Giesing', city: 'München' }
+        { name: 'Subway Arcaden', city: 'Regensburg' },
+        { name: 'Subway Ziegetsdorfer Straße', city: 'Regensburg' },
+        { name: 'Subway DEZ', city: 'Regensburg' },
+        { name: 'Subway Arnulfsplatz', city: 'Regensburg' },
+        { name: 'Subway Cham', city: 'Cham' },
+        { name: 'Subway Straubing', city: 'Straubing' },
+        { name: 'Subway Dingolfing', city: 'Dingolfing' },
+        { name: 'Subway Neutraubling', city: 'Neutraubling' },
+        { name: 'Subway Regenstauf', city: 'Regenstauf' }
       ];
 
       for (const store of stores) {
