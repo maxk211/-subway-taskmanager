@@ -7,11 +7,11 @@ const { authMiddleware } = require('../middleware/auth');
 const router = express.Router();
 
 // Login
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    const user = db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username);
+    const user = await db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username);
 
     if (!user) {
       return res.status(401).json({ message: 'Ungültige Anmeldedaten' });
@@ -31,7 +31,7 @@ router.post('/login', (req, res) => {
         store_id: user.store_id,
         full_name: user.full_name
       },
-      process.env.JWT_SECRET,
+      process.env.JWT_SECRET || 'subway-secret-key-2024',
       { expiresIn: '24h' }
     );
 
@@ -46,14 +46,15 @@ router.post('/login', (req, res) => {
       }
     });
   } catch (error) {
+    console.error('Login error:', error);
     res.status(500).json({ message: 'Serverfehler', error: error.message });
   }
 });
 
 // Aktuellen User abrufen
-router.get('/me', authMiddleware, (req, res) => {
+router.get('/me', authMiddleware, async (req, res) => {
   try {
-    const user = db.prepare(`
+    const user = await db.prepare(`
       SELECT u.id, u.username, u.full_name, u.email, u.role, u.store_id, s.name as store_name
       FROM users u
       LEFT JOIN stores s ON u.store_id = s.id
