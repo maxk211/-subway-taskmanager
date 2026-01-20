@@ -66,11 +66,10 @@ async function generateTasksForToday() {
     let totalCreated = 0;
 
     for (const store of stores) {
-      // Hole passende Templates
+      // Hole passende Templates (daily oder weekly für aktuellen Tag/Woche)
       const templatesResult = await client.query(`
         SELECT * FROM task_templates
         WHERE (store_id IS NULL OR store_id = $1)
-        AND active = true
         AND (
           recurrence = 'daily'
           OR (recurrence = 'weekly' AND (
