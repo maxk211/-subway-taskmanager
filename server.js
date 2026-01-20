@@ -33,54 +33,56 @@ app.get('/health', (req, res) => {
 });
 
 // Automatische Task-Generierung (täglich um 1 Uhr nachts)
-cron.schedule('0 1 * * *', () => {
+cron.schedule('0 1 * * *', async () => {
   console.log('Generiere Tasks für heute...');
 
-  const today = new Date().toISOString().split('T')[0];
-  const stores = db.prepare('SELECT id FROM stores').all();
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const stores = await db.prepare('SELECT id FROM stores').all();
 
-  stores.forEach(store => {
-    try {
-      const dateObj = new Date(today);
-      const dayOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][dateObj.getDay()];
+    for (const store of stores) {
+      try {
+        const dateObj = new Date(today);
+        const dayOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][dateObj.getDay()];
 
-      const templates = db.prepare(`
-        SELECT * FROM task_templates
-        WHERE (store_id IS NULL OR store_id = ?)
-        AND (
-          recurrence = 'daily'
-          OR (recurrence = 'weekly' AND recurrence_day = ?)
-          OR (recurrence = 'monthly' AND CAST(strftime('%d', ?) AS INTEGER) = CAST(recurrence_day AS INTEGER))
-        )
-      `).all(store.id, dayOfWeek, today);
+        const templates = await db.prepare(`
+          SELECT * FROM task_templates
+          WHERE (store_id IS NULL OR store_id = $1)
+          AND (
+            recurrence = 'daily'
+            OR (recurrence = 'weekly' AND recurrence_day = $2)
+            OR (recurrence = 'monthly' AND EXTRACT(DAY FROM DATE $3) = CAST(recurrence_day AS INTEGER))
+          )
+        `).all(store.id, dayOfWeek, today);
 
-      const insertTask = db.prepare(`
-        INSERT INTO tasks (template_id, store_id, title, description, shift, due_date)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `);
+        for (const template of templates) {
+          const shifts = template.shift === 'beide' ? ['frueh', 'spaet'] : [template.shift];
 
-      templates.forEach(template => {
-        const shifts = template.shift === 'beide' ? ['frueh', 'spaet'] : [template.shift];
+          for (const shift of shifts) {
+            const existing = await db.prepare(`
+              SELECT id FROM tasks
+              WHERE template_id = $1 AND store_id = $2 AND due_date = $3 AND shift = $4
+            `).get(template.id, store.id, today, shift);
 
-        shifts.forEach(shift => {
-          const existing = db.prepare(`
-            SELECT id FROM tasks
-            WHERE template_id = ? AND store_id = ? AND due_date = ? AND shift = ?
-          `).get(template.id, store.id, today, shift);
-
-          if (!existing) {
-            insertTask.run(template.id, store.id, template.title, template.description, shift, today);
+            if (!existing) {
+              await db.prepare(`
+                INSERT INTO tasks (template_id, store_id, title, description, shift, due_date)
+                VALUES ($1, $2, $3, $4, $5, $6)
+              `).run(template.id, store.id, template.title, template.description, shift, today);
+            }
           }
-        });
-      });
+        }
 
-      console.log(`Tasks für Store ${store.id} generiert`);
-    } catch (error) {
-      console.error(`Fehler bei Store ${store.id}:`, error);
+        console.log(`Tasks für Store ${store.id} generiert`);
+      } catch (error) {
+        console.error(`Fehler bei Store ${store.id}:`, error);
+      }
     }
-  });
 
-  console.log('Task-Generierung abgeschlossen');
+    console.log('Task-Generierung abgeschlossen');
+  } catch (error) {
+    console.error('Fehler bei Task-Generierung:', error);
+  }
 });
 
 // Error Handler
