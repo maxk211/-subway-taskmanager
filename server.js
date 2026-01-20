@@ -31,6 +31,16 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// Manueller Trigger für Task-Generierung
+app.post('/api/generate-tasks', async (req, res) => {
+  try {
+    const result = await generateTasksForToday();
+    res.json({ success: true, message: 'Tasks generiert', result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Funktion zur Task-Generierung
 async function generateTasksForToday() {
   // Nur für PostgreSQL
@@ -104,9 +114,11 @@ async function generateTasksForToday() {
     }
 
     console.log(`✅ ${totalCreated} Tasks für heute erstellt!`);
+    return { totalCreated, stores: stores.length };
 
   } catch (error) {
     console.error('Fehler bei Task-Generierung:', error);
+    throw error;
   } finally {
     client.release();
     await pool.end();
