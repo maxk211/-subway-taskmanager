@@ -45,14 +45,14 @@ async function checkAndInit() {
       });
     } else {
       console.log('✅ Datenbank bereits initialisiert');
+      await pool.end();
       startServer();
     }
   } catch (error) {
     console.error('Fehler bei Datenbank-Check:', error);
     console.log('Versuche Server trotzdem zu starten...');
-    startServer();
-  } finally {
     await pool.end();
+    startServer();
   }
 }
 
