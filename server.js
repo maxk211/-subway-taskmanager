@@ -144,6 +144,10 @@ app.listen(PORT, async () => {
   ╚═══════════════════════════════════════╝
   `);
 
-  // Generiere Tasks beim Server-Start
-  await generateTasksForToday();
+  // Generiere Tasks beim Server-Start (mit Fehlerbehandlung)
+  try {
+    await generateTasksForToday();
+  } catch (error) {
+    console.error('Task-Generierung beim Start fehlgeschlagen:', error.message);
+  }
 });
