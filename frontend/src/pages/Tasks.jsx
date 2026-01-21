@@ -273,8 +273,13 @@ const Tasks = () => {
             <ClockIcon className="mx-auto h-12 w-12 text-gray-400" />
             <h3 className="mt-2 text-sm font-medium text-gray-900">Keine Aufgaben</h3>
             <p className="mt-1 text-sm text-gray-500">
-              Für diesen Tag sind noch keine Aufgaben vorhanden.
+              Für {format(new Date(selectedDate), 'dd.MM.yyyy', { locale: de })} sind keine Aufgaben vorhanden.
             </p>
+            {!(isAdmin || isManager) && (
+              <p className="mt-2 text-sm text-gray-400">
+                Dein Manager kann Aufgaben für deinen Store erstellen.
+              </p>
+            )}
           </div>
         )}
       </div>
