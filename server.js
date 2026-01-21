@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const cron = require('node-cron');
 const path = require('path');
 
 const app = express();
@@ -31,147 +30,6 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Manueller Trigger für Task-Generierung
-app.post('/api/generate-tasks', async (req, res) => {
-  try {
-    const result = await generateTasksForToday();
-    res.json({ success: true, message: 'Tasks generiert', result });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Duplikate bereinigen
-app.post('/api/cleanup-duplicates', async (req, res) => {
-  try {
-    const result = await cleanupDuplicateTasks();
-    res.json({ success: true, message: 'Duplikate bereinigt', result });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Funktion zum Bereinigen von Duplikaten
-async function cleanupDuplicateTasks() {
-  if (!process.env.DATABASE_URL) {
-    return { deleted: 0, message: 'SQLite - übersprungen' };
-  }
-
-  const { Pool } = require('pg');
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-  });
-
-  const client = await pool.connect();
-
-  try {
-    // Lösche Duplikate: behalte nur den ersten Task pro (title, store_id, due_date, shift)
-    const result = await client.query(`
-      DELETE FROM tasks
-      WHERE id NOT IN (
-        SELECT MIN(id)
-        FROM tasks
-        GROUP BY title, store_id, due_date, shift
-      )
-    `);
-
-    console.log(`🧹 ${result.rowCount} doppelte Tasks gelöscht`);
-    return { deleted: result.rowCount };
-
-  } finally {
-    client.release();
-    await pool.end();
-  }
-}
-
-// Funktion zur Task-Generierung
-async function generateTasksForToday() {
-  // Nur für PostgreSQL
-  if (!process.env.DATABASE_URL) {
-    console.log('SQLite - Task-Generierung übersprungen');
-    return;
-  }
-
-  const { Pool } = require('pg');
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-  });
-
-  const client = await pool.connect();
-
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    const dateObj = new Date(today);
-    const dayOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][dateObj.getDay()];
-
-    // Berechne aktuelle Kalenderwoche (1-4 Rotation)
-    const startOfYear = new Date(dateObj.getFullYear(), 0, 1);
-    const weekNumber = Math.ceil((((dateObj - startOfYear) / 86400000) + startOfYear.getDay() + 1) / 7);
-    const weekInCycle = ((weekNumber - 1) % 4) + 1;
-
-    console.log(`📅 Generiere Tasks für ${today} (${dayOfWeek}, Woche ${weekInCycle})`);
-
-    // Hole alle Stores
-    const storesResult = await client.query('SELECT id, name FROM stores');
-    const stores = storesResult.rows;
-
-    let totalCreated = 0;
-
-    for (const store of stores) {
-      // Hole passende Templates (daily oder weekly für aktuellen Tag/Woche)
-      const templatesResult = await client.query(`
-        SELECT * FROM task_templates
-        WHERE (store_id IS NULL OR store_id = $1)
-        AND (
-          recurrence = 'daily'
-          OR (recurrence = 'weekly' AND (
-            recurrence_day = $2
-            OR recurrence_day = $3
-          ))
-        )
-      `, [store.id, dayOfWeek, `${dayOfWeek}_w${weekInCycle}`]);
-
-      const templates = templatesResult.rows;
-
-      for (const template of templates) {
-        const shifts = template.shift === 'beide' ? ['frueh', 'spaet'] : [template.shift];
-
-        for (const shift of shifts) {
-          // Prüfe ob Task schon existiert (basierend auf Titel, nicht template_id)
-          const existingResult = await client.query(`
-            SELECT id FROM tasks
-            WHERE title = $1 AND store_id = $2 AND due_date = $3 AND shift = $4
-          `, [template.title, store.id, today, shift]);
-
-          if (existingResult.rows.length === 0) {
-            await client.query(`
-              INSERT INTO tasks (template_id, store_id, title, description, shift, due_date, status)
-              VALUES ($1, $2, $3, $4, $5, $6, 'pending')
-            `, [template.id, store.id, template.title, template.description, shift, today]);
-
-            totalCreated++;
-          }
-        }
-      }
-    }
-
-    console.log(`✅ ${totalCreated} Tasks für heute erstellt!`);
-    return { totalCreated, stores: stores.length };
-
-  } catch (error) {
-    console.error('Fehler bei Task-Generierung:', error);
-    throw error;
-  } finally {
-    client.release();
-    await pool.end();
-  }
-}
-
-// Automatische Task-Generierung täglich um 1 Uhr nachts
-cron.schedule('0 1 * * *', generateTasksForToday);
-
 // Error Handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -180,19 +38,11 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
   console.log(`
   ╔═══════════════════════════════════════╗
   ║   Subway Taskmanager Backend         ║
   ║   Server läuft auf Port ${PORT}        ║
   ╚═══════════════════════════════════════╝
   `);
-
-  // Bereinige Duplikate und generiere Tasks beim Server-Start
-  try {
-    await cleanupDuplicateTasks();
-    await generateTasksForToday();
-  } catch (error) {
-    console.error('Task-Generierung beim Start fehlgeschlagen:', error.message);
-  }
 });

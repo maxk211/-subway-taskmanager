@@ -64,26 +64,6 @@ const Tasks = () => {
     }
   };
 
-  const generateTasks = async () => {
-    try {
-      const storeId = selectedStore || user?.store_id;
-      if (!storeId) {
-        toast.error('Bitte Store auswählen');
-        return;
-      }
-
-      await api.post('/tasks/generate', {
-        date: selectedDate,
-        store_id: storeId
-      });
-
-      toast.success('Aufgaben erfolgreich generiert!');
-      loadTasks();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Fehler beim Generieren der Aufgaben');
-    }
-  };
-
   const handleCompleteTask = async (taskId) => {
     setCompletingTaskId(taskId);
     try {
@@ -174,21 +154,13 @@ const Tasks = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-3xl font-bold text-gray-900">Meine Aufgaben</h1>
         {(isAdmin || isManager) && (
-          <div className="mt-4 sm:mt-0 flex gap-2">
-            <button
-              onClick={() => setShowNewTaskModal(true)}
-              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-subway-green hover:bg-subway-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-subway-green"
-            >
-              <PlusIcon className="h-5 w-5 mr-2" />
-              Neue Aufgabe
-            </button>
-            <button
-              onClick={generateTasks}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-subway-green"
-            >
-              Tagesaufgaben generieren
-            </button>
-          </div>
+          <button
+            onClick={() => setShowNewTaskModal(true)}
+            className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-subway-green hover:bg-subway-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-subway-green"
+          >
+            <PlusIcon className="h-5 w-5 mr-2" />
+            Neue Aufgabe
+          </button>
         )}
       </div>
 
