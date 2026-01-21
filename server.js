@@ -218,6 +218,35 @@ app.post('/api/generate-tasks', async (req, res) => {
   }
 });
 
+// Debug-Endpoint: Zeige Tasks in DB
+app.get('/api/debug/tasks', async (req, res) => {
+  if (!process.env.DATABASE_URL) {
+    return res.json({ error: 'No database' });
+  }
+
+  const { Pool } = require('pg');
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  });
+
+  try {
+    const stores = await pool.query('SELECT * FROM stores');
+    const tasks = await pool.query('SELECT * FROM tasks ORDER BY due_date DESC LIMIT 50');
+
+    res.json({
+      storeCount: stores.rows.length,
+      stores: stores.rows,
+      taskCount: tasks.rows.length,
+      tasks: tasks.rows
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  } finally {
+    await pool.end();
+  }
+});
+
 // Error Handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
