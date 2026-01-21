@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Tasks from './pages/Tasks';
 import Reports from './pages/Reports';
+import Employees from './pages/Employees';
 
 const PrivateRoute = ({ children, roles }) => {
   const { user, loading } = useAuth();
@@ -82,6 +83,15 @@ function App() {
               element={
                 <PrivateRoute roles={['admin', 'manager']}>
                   <Reports />
+                </PrivateRoute>
+              }
+            />
+
+            <Route
+              path="/employees"
+              element={
+                <PrivateRoute roles={['admin', 'manager']}>
+                  <Employees />
                 </PrivateRoute>
               }
             />

@@ -103,9 +103,9 @@ async function generateTasksForToday() {
 
           if (existingResult.rows.length === 0) {
             await client.query(`
-              INSERT INTO tasks (template_id, store_id, title, description, shift, due_date, status, category)
-              VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
-            `, [template.id, store.id, template.title, template.description, shift, today, template.category]);
+              INSERT INTO tasks (template_id, store_id, title, description, shift, due_date, status)
+              VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+            `, [template.id, store.id, template.title, template.description, shift, today]);
 
             totalCreated++;
           }
