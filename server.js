@@ -124,13 +124,8 @@ function getWeekInCycle(date = new Date()) {
 }
 
 // Task-Generierung für heute
-let lastGenerationResult = null;
-
 async function generateTasksForToday() {
-  if (!process.env.DATABASE_URL) {
-    lastGenerationResult = { error: 'No DATABASE_URL' };
-    return;
-  }
+  if (!process.env.DATABASE_URL) return;
 
   const { Pool } = require('pg');
   const pool = new Pool({
@@ -144,23 +139,18 @@ async function generateTasksForToday() {
     const dayOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][today.getDay()];
     const currentWeek = getWeekInCycle(today);
 
-    console.log(`📅 Generiere Tasks für ${todayStr} (${dayOfWeek}, Woche ${currentWeek})`);
+    console.log(`📅 Task-Generierung: ${todayStr} (${dayOfWeek}, Woche ${currentWeek})`);
 
     // Hole alle Stores
     const storesResult = await pool.query('SELECT id, name FROM stores');
     const stores = storesResult.rows;
-
-    console.log(`🏪 ${stores.length} Stores gefunden`);
 
     // Filtere Tasks für heute
     const todaysTasks = weeklyCleaningTasks.filter(
       task => task.week === currentWeek && task.day === dayOfWeek
     );
 
-    console.log(`📋 ${todaysTasks.length} Aufgaben für heute gefunden:`, todaysTasks.map(t => t.title));
-
     let totalCreated = 0;
-    let errors = [];
 
     for (const store of stores) {
       for (const task of todaysTasks) {
@@ -177,33 +167,17 @@ async function generateTasksForToday() {
               VALUES ($1, $2, $3, 'frueh', $4, 'pending')
             `, [store.id, task.title, task.category || '', todayStr]);
             totalCreated++;
-            console.log(`✓ Task erstellt: ${task.title} für ${store.name}`);
-          } else {
-            console.log(`⏭ Task existiert bereits: ${task.title} für ${store.name}`);
           }
         } catch (insertError) {
-          console.error(`❌ Fehler bei Task ${task.title} für ${store.name}:`, insertError.message);
-          errors.push({ task: task.title, store: store.name, error: insertError.message });
+          console.error(`Task-Fehler (${task.title}):`, insertError.message);
         }
       }
     }
 
-    console.log(`✅ ${totalCreated} Tasks erstellt für ${stores.length} Stores`);
-
-    lastGenerationResult = {
-      success: true,
-      date: todayStr,
-      dayOfWeek,
-      currentWeek,
-      storesCount: stores.length,
-      tasksToCreate: todaysTasks.length,
-      totalCreated,
-      errors
-    };
+    console.log(`✅ ${totalCreated} neue Tasks erstellt`);
 
   } catch (error) {
-    console.error('Task-Generierung Fehler:', error);
-    lastGenerationResult = { error: error.message, stack: error.stack };
+    console.error('Task-Generierung Fehler:', error.message);
   } finally {
     await pool.end();
   }
@@ -236,49 +210,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Manueller Trigger für Task-Generierung
+// Manueller Trigger für Task-Generierung (nur für Admins)
 app.post('/api/generate-tasks', async (req, res) => {
   try {
     await generateTasksForToday();
-    res.json({ success: true, message: 'Tasks generiert', result: lastGenerationResult });
+    res.json({ success: true, message: 'Tasks generiert' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Letztes Generierungs-Ergebnis
-app.get('/api/generation-status', (req, res) => {
-  res.json(lastGenerationResult || { status: 'not run yet' });
-});
-
-// Debug-Endpoint: Zeige Tasks in DB
-app.get('/api/debug/tasks', async (req, res) => {
-  if (!process.env.DATABASE_URL) {
-    return res.json({ error: 'No database' });
-  }
-
-  const { Pool } = require('pg');
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-  });
-
-  try {
-    const stores = await pool.query('SELECT * FROM stores');
-    const tasks = await pool.query('SELECT * FROM tasks ORDER BY due_date DESC LIMIT 50');
-    const users = await pool.query('SELECT id, username, full_name, role, store_id FROM users');
-
-    res.json({
-      storeCount: stores.rows.length,
-      stores: stores.rows,
-      taskCount: tasks.rows.length,
-      tasks: tasks.rows,
-      users: users.rows
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  } finally {
-    await pool.end();
   }
 });
 
