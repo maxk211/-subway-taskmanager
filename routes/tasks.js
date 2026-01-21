@@ -231,16 +231,20 @@ router.post('/generate', authMiddleware, requireRole('admin', 'manager'), async 
     const dateObj = new Date(date);
     const dayOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][dateObj.getDay()];
 
-    // Hole relevante Templates
+    // Berechne aktuelle Kalenderwoche (1-4 Rotation)
+    const startOfYear = new Date(dateObj.getFullYear(), 0, 1);
+    const weekNumber = Math.ceil((((dateObj - startOfYear) / 86400000) + startOfYear.getDay() + 1) / 7);
+    const weekInCycle = ((weekNumber - 1) % 4) + 1;
+
+    // Hole relevante Templates (daily oder weekly für aktuellen Tag/Woche)
     const templates = await db.prepare(`
       SELECT * FROM task_templates
       WHERE (store_id IS NULL OR store_id = ?)
       AND (
         recurrence = 'daily'
-        OR (recurrence = 'weekly' AND recurrence_day = ?)
-        OR (recurrence = 'monthly' AND CAST(EXTRACT(DAY FROM DATE ?) AS INTEGER) = CAST(recurrence_day AS INTEGER))
+        OR (recurrence = 'weekly' AND (recurrence_day = ? OR recurrence_day = ?))
       )
-    `).all(store_id, dayOfWeek, date);
+    `).all(store_id, dayOfWeek, `${dayOfWeek}_w${weekInCycle}`);
 
     let createdCount = 0;
 
@@ -248,16 +252,16 @@ router.post('/generate', authMiddleware, requireRole('admin', 'manager'), async 
       const shifts = template.shift === 'beide' ? ['frueh', 'spaet'] : [template.shift];
 
       for (const shift of shifts) {
-        // Prüfe ob Task bereits existiert
+        // Prüfe ob Task bereits existiert (basierend auf Titel, nicht template_id)
         const existing = await db.prepare(`
           SELECT id FROM tasks
-          WHERE template_id = ? AND store_id = ? AND due_date = ? AND shift = ?
-        `).get(template.id, store_id, date, shift);
+          WHERE title = ? AND store_id = ? AND due_date = ? AND shift = ?
+        `).get(template.title, store_id, date, shift);
 
         if (!existing) {
           await db.prepare(`
-            INSERT INTO tasks (template_id, store_id, title, description, shift, due_date)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks (template_id, store_id, title, description, shift, due_date, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending')
           `).run(template.id, store_id, template.title, template.description, shift, date);
           createdCount++;
         }
