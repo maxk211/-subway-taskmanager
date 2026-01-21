@@ -9,7 +9,8 @@ import {
   ClockIcon,
   CameraIcon,
   DocumentTextIcon,
-  PlusIcon
+  PlusIcon,
+  XMarkIcon
 } from '@heroicons/react/24/outline';
 
 const Tasks = () => {
@@ -21,6 +22,12 @@ const Tasks = () => {
   const [selectedStore, setSelectedStore] = useState(user?.store_id || '');
   const [stores, setStores] = useState([]);
   const [completingTaskId, setCompletingTaskId] = useState(null);
+  const [showNewTaskModal, setShowNewTaskModal] = useState(false);
+  const [newTask, setNewTask] = useState({
+    title: '',
+    description: '',
+    shift: 'frueh'
+  });
 
   useEffect(() => {
     if (isAdmin || isManager) {
@@ -90,6 +97,38 @@ const Tasks = () => {
     }
   };
 
+  const handleCreateTask = async (e) => {
+    e.preventDefault();
+
+    if (!newTask.title.trim()) {
+      toast.error('Bitte Titel eingeben');
+      return;
+    }
+
+    const storeId = selectedStore || user?.store_id;
+    if (!storeId) {
+      toast.error('Bitte Store auswählen');
+      return;
+    }
+
+    try {
+      await api.post('/tasks/create', {
+        title: newTask.title,
+        description: newTask.description,
+        shift: newTask.shift,
+        store_id: storeId,
+        due_date: selectedDate
+      });
+
+      toast.success('Aufgabe erstellt!');
+      setShowNewTaskModal(false);
+      setNewTask({ title: '', description: '', shift: 'frueh' });
+      loadTasks();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Fehler beim Erstellen');
+    }
+  };
+
   const getStatusBadge = (status) => {
     const badges = {
       pending: { color: 'bg-yellow-100 text-yellow-800', text: 'Ausstehend' },
@@ -135,13 +174,21 @@ const Tasks = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-3xl font-bold text-gray-900">Meine Aufgaben</h1>
         {(isAdmin || isManager) && (
-          <button
-            onClick={generateTasks}
-            className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-subway-green hover:bg-subway-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-subway-green"
-          >
-            <PlusIcon className="h-5 w-5 mr-2" />
-            Aufgaben generieren
-          </button>
+          <div className="mt-4 sm:mt-0 flex gap-2">
+            <button
+              onClick={() => setShowNewTaskModal(true)}
+              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-subway-green hover:bg-subway-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-subway-green"
+            >
+              <PlusIcon className="h-5 w-5 mr-2" />
+              Neue Aufgabe
+            </button>
+            <button
+              onClick={generateTasks}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-subway-green"
+            >
+              Tagesaufgaben generieren
+            </button>
+          </div>
         )}
       </div>
 
@@ -260,6 +307,90 @@ const Tasks = () => {
         )}
       </div>
 
+      {/* Neue Aufgabe Modal */}
+      {showNewTaskModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Neue Aufgabe erstellen</h2>
+              <button
+                onClick={() => setShowNewTaskModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateTask} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Titel *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newTask.title}
+                  onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                  placeholder="z.B. Lieferung annehmen"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-subway-green focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Beschreibung
+                </label>
+                <textarea
+                  value={newTask.description}
+                  onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+                  placeholder="Optionale Details zur Aufgabe..."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-subway-green focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Schicht
+                </label>
+                <select
+                  value={newTask.shift}
+                  onChange={(e) => setNewTask({ ...newTask, shift: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-subway-green focus:border-transparent"
+                >
+                  <option value="frueh">Frühschicht</option>
+                  <option value="spaet">Spätschicht</option>
+                </select>
+              </div>
+
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-sm text-gray-600">
+                  <strong>Datum:</strong> {format(new Date(selectedDate), 'dd.MM.yyyy', { locale: de })}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Store:</strong> {stores.find(s => s.id == (selectedStore || user?.store_id))?.name || 'Nicht ausgewählt'}
+                </p>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowNewTaskModal(false)}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-subway-green text-white rounded-lg hover:bg-subway-dark"
+                >
+                  Erstellen
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

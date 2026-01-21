@@ -133,6 +133,42 @@ router.put('/:id/complete', authMiddleware, upload.single('photo'), async (req, 
   }
 });
 
+// Individuelle Aufgabe erstellen (einmalig, ohne Template)
+router.post('/create', authMiddleware, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const { title, description, shift, store_id, due_date } = req.body;
+
+    // Berechtigung prüfen
+    if (req.user.role === 'manager' && store_id !== req.user.store_id) {
+      return res.status(403).json({ message: 'Keine Berechtigung' });
+    }
+
+    if (!title || !shift || !store_id || !due_date) {
+      return res.status(400).json({ message: 'Titel, Schicht, Store und Datum sind erforderlich' });
+    }
+
+    // Prüfe ob Task bereits existiert
+    const existing = await db.prepare(`
+      SELECT id FROM tasks
+      WHERE title = ? AND store_id = ? AND due_date = ? AND shift = ?
+    `).get(title, store_id, due_date, shift);
+
+    if (existing) {
+      return res.status(400).json({ message: 'Diese Aufgabe existiert bereits für diesen Tag' });
+    }
+
+    await db.prepare(`
+      INSERT INTO tasks (store_id, title, description, shift, due_date, status)
+      VALUES (?, ?, ?, ?, ?, 'pending')
+    `).run(store_id, title, description || '', shift, due_date);
+
+    res.json({ message: 'Aufgabe erstellt', success: true });
+  } catch (error) {
+    console.error('Task create error:', error);
+    res.status(500).json({ message: 'Serverfehler', error: error.message });
+  }
+});
+
 // Dashboard-Statistiken
 router.get('/stats/dashboard', authMiddleware, requireRole('admin', 'manager'), async (req, res) => {
   try {
