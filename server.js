@@ -30,6 +30,29 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// Einmaliger Cleanup: Lösche alle automatisch generierten Routine-Tasks
+async function cleanupRoutineTasks() {
+  if (!process.env.DATABASE_URL) return;
+
+  const { Pool } = require('pg');
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  });
+
+  try {
+    // Lösche alle Tasks die eine template_id haben (automatisch generiert)
+    const result = await pool.query(`
+      DELETE FROM tasks WHERE template_id IS NOT NULL
+    `);
+    console.log(`🧹 ${result.rowCount} automatisch generierte Tasks gelöscht`);
+  } catch (error) {
+    console.error('Cleanup error:', error.message);
+  } finally {
+    await pool.end();
+  }
+}
+
 // Error Handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -38,11 +61,14 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`
   ╔═══════════════════════════════════════╗
   ║   Subway Taskmanager Backend         ║
   ║   Server läuft auf Port ${PORT}        ║
   ╚═══════════════════════════════════════╝
   `);
+
+  // Einmaliger Cleanup beim Start - entfernt alle alten Routine-Tasks
+  await cleanupRoutineTasks();
 });
