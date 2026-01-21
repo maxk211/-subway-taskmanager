@@ -17,19 +17,6 @@ app.use(express.urlencoded({ extended: true }));
 // Statische Dateien für Uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Routes
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/stores', require('./routes/stores'));
-app.use('/api/users', require('./routes/users'));
-app.use('/api/tasks', require('./routes/tasks'));
-app.use('/api/templates', require('./routes/templates'));
-app.use('/api/reports', require('./routes/reports'));
-
-// Health Check
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
-});
-
 // Wöchentliche Reinigungsaufgaben (4-Wochen-Rotation)
 const weeklyCleaningTasks = [
   // Woche 1
@@ -193,6 +180,43 @@ async function generateTasksForToday() {
     await pool.end();
   }
 }
+
+// Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/stores', require('./routes/stores'));
+app.use('/api/users', require('./routes/users'));
+app.use('/api/tasks', require('./routes/tasks'));
+app.use('/api/templates', require('./routes/templates'));
+app.use('/api/reports', require('./routes/reports'));
+
+// Health Check mit Debug-Info
+app.get('/health', (req, res) => {
+  const today = new Date();
+  const dayOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][today.getDay()];
+  const currentWeek = getWeekInCycle(today);
+  const todaysTasks = weeklyCleaningTasks.filter(
+    task => task.week === currentWeek && task.day === dayOfWeek
+  );
+
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    currentWeek,
+    dayOfWeek,
+    tasksForToday: todaysTasks.length,
+    taskTitles: todaysTasks.map(t => t.title)
+  });
+});
+
+// Manueller Trigger für Task-Generierung
+app.post('/api/generate-tasks', async (req, res) => {
+  try {
+    await generateTasksForToday();
+    res.json({ success: true, message: 'Tasks generiert' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // Error Handler
 app.use((err, req, res, next) => {
