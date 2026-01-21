@@ -288,6 +288,32 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
+// Datenbank-Schema-Fix: template_id nullable machen
+async function fixDatabaseSchema() {
+  if (!process.env.DATABASE_URL) return;
+
+  const { Pool } = require('pg');
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  });
+
+  try {
+    // template_id nullable machen
+    await pool.query(`
+      ALTER TABLE tasks ALTER COLUMN template_id DROP NOT NULL
+    `);
+    console.log('✅ Database schema fixed: template_id is now nullable');
+  } catch (error) {
+    // Ignoriere Fehler falls schon nullable
+    if (!error.message.includes('already')) {
+      console.log('Schema fix info:', error.message);
+    }
+  } finally {
+    await pool.end();
+  }
+}
+
 app.listen(PORT, async () => {
   console.log(`
   ╔═══════════════════════════════════════╗
@@ -296,6 +322,7 @@ app.listen(PORT, async () => {
   ╚═══════════════════════════════════════╝
   `);
 
-  // Generiere Tasks beim Server-Start
+  // Erst Schema fixen, dann Tasks generieren
+  await fixDatabaseSchema();
   await generateTasksForToday();
 });
