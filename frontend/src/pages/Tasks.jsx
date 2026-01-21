@@ -20,12 +20,7 @@ const Tasks = () => {
   const [selectedShift, setSelectedShift] = useState('');
   const [selectedStore, setSelectedStore] = useState(user?.store_id || '');
   const [stores, setStores] = useState([]);
-  const [showCompleteModal, setShowCompleteModal] = useState(false);
-  const [selectedTask, setSelectedTask] = useState(null);
-  const [completionData, setCompletionData] = useState({
-    notes: '',
-    photo: null
-  });
+  const [completingTaskId, setCompletingTaskId] = useState(null);
 
   useEffect(() => {
     if (isAdmin || isManager) {
@@ -82,29 +77,16 @@ const Tasks = () => {
     }
   };
 
-  const openCompleteModal = (task) => {
-    setSelectedTask(task);
-    setCompletionData({ notes: '', photo: null });
-    setShowCompleteModal(true);
-  };
-
-  const handleCompleteTask = async () => {
+  const handleCompleteTask = async (taskId) => {
+    setCompletingTaskId(taskId);
     try {
-      const formData = new FormData();
-      formData.append('notes', completionData.notes);
-      if (completionData.photo) {
-        formData.append('photo', completionData.photo);
-      }
-
-      await api.put(`/tasks/${selectedTask.id}/complete`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-
-      toast.success('Aufgabe als erledigt markiert!');
-      setShowCompleteModal(false);
+      await api.put(`/tasks/${taskId}/complete`, {});
+      toast.success('Aufgabe erledigt!');
       loadTasks();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Fehler beim Abschließen der Aufgabe');
+      toast.error(error.response?.data?.message || 'Fehler beim Abschließen');
+    } finally {
+      setCompletingTaskId(null);
     }
   };
 
@@ -252,11 +234,16 @@ const Tasks = () => {
 
             {task.status === 'pending' && (
               <button
-                onClick={() => openCompleteModal(task)}
-                className="w-full mt-4 inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-subway-green hover:bg-subway-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-subway-green"
+                onClick={() => handleCompleteTask(task.id)}
+                disabled={completingTaskId === task.id}
+                className="w-full mt-4 inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-subway-green hover:bg-subway-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-subway-green disabled:opacity-50"
               >
-                <CheckCircleIcon className="h-5 w-5 mr-2" />
-                Als erledigt markieren
+                {completingTaskId === task.id ? (
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                ) : (
+                  <CheckCircleIcon className="h-5 w-5 mr-2" />
+                )}
+                {completingTaskId === task.id ? 'Wird gespeichert...' : 'Erledigt'}
               </button>
             )}
           </div>
@@ -273,68 +260,6 @@ const Tasks = () => {
         )}
       </div>
 
-      {/* Complete Task Modal */}
-      {showCompleteModal && selectedTask && (
-        <div className="fixed z-10 inset-0 overflow-y-auto">
-          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowCompleteModal(false)}></div>
-
-            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                  Aufgabe abschließen
-                </h3>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Notizen (optional)
-                    </label>
-                    <textarea
-                      value={completionData.notes}
-                      onChange={(e) => setCompletionData({ ...completionData, notes: e.target.value })}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-subway-green focus:border-transparent"
-                      placeholder="Zusätzliche Informationen..."
-                    />
-                  </div>
-
-                  {selectedTask.requires_photo && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Foto hochladen {selectedTask.requires_photo ? '(Pflicht)' : '(Optional)'}
-                      </label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={(e) => setCompletionData({ ...completionData, photo: e.target.files[0] })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-subway-green focus:border-transparent"
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                <button
-                  onClick={handleCompleteTask}
-                  disabled={selectedTask.requires_photo && !completionData.photo}
-                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-subway-green text-base font-medium text-white hover:bg-subway-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-subway-green sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Abschließen
-                </button>
-                <button
-                  onClick={() => setShowCompleteModal(false)}
-                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-subway-green sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
-                >
-                  Abbrechen
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

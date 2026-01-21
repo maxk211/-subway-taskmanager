@@ -162,6 +162,12 @@ router.get('/stats/dashboard', authMiddleware, requireRole('admin', 'manager'), 
     `).get(...params);
 
     // Statistiken pro Store
+    const storeStatsParams = store_id
+      ? [start_date, end_date, store_id]
+      : req.user.role === 'manager'
+        ? [start_date, end_date, req.user.store_id]
+        : [start_date, end_date];
+
     const storeStats = await db.prepare(`
       SELECT
         s.id,
@@ -175,10 +181,16 @@ router.get('/stats/dashboard', authMiddleware, requireRole('admin', 'manager'), 
       ${store_id ? 'WHERE s.id = ?' : req.user.role === 'manager' ? 'WHERE s.id = ?' : ''}
       GROUP BY s.id, s.name
       ORDER BY s.name
-    `).all(...(store_id ? [start_date, end_date, store_id] : req.user.role === 'manager' ? [start_date, end_date, req.user.store_id] : [start_date, end_date]));
+    `).all(...storeStatsParams);
 
     // Statistiken pro Mitarbeiter
-    const employeeStatsQuery = `
+    const employeeStatsParams = store_id
+      ? [start_date, end_date, store_id]
+      : req.user.role === 'manager'
+        ? [start_date, end_date, req.user.store_id]
+        : [start_date, end_date];
+
+    const employeeStats = await db.prepare(`
       SELECT
         u.id,
         u.full_name,
@@ -190,14 +202,10 @@ router.get('/stats/dashboard', authMiddleware, requireRole('admin', 'manager'), 
       LEFT JOIN stores s ON u.store_id = s.id
       WHERE u.role = 'employee'
       ${store_id ? 'AND u.store_id = ?' : req.user.role === 'manager' ? 'AND u.store_id = ?' : ''}
-      GROUP BY u.id
+      GROUP BY u.id, u.full_name, s.name
       ORDER BY completed_tasks DESC
       LIMIT 10
-    `;
-
-    const employeeStats = await db.prepare(employeeStatsQuery).all(
-      ...(store_id ? [start_date, end_date, store_id] : req.user.role === 'manager' ? [start_date, end_date, req.user.store_id] : [start_date, end_date])
-    );
+    `).all(...employeeStatsParams);
 
     res.json({
       totalStats,
