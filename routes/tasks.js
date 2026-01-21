@@ -63,7 +63,7 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 
     if (date) {
-      query += ' AND t.due_date = ?';
+      query += ' AND DATE(t.due_date) = ?';
       params.push(date);
     }
 
