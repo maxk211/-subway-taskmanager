@@ -266,12 +266,14 @@ app.get('/api/debug/tasks', async (req, res) => {
   try {
     const stores = await pool.query('SELECT * FROM stores');
     const tasks = await pool.query('SELECT * FROM tasks ORDER BY due_date DESC LIMIT 50');
+    const users = await pool.query('SELECT id, username, full_name, role, store_id FROM users');
 
     res.json({
       storeCount: stores.rows.length,
       stores: stores.rows,
       taskCount: tasks.rows.length,
-      tasks: tasks.rows
+      tasks: tasks.rows,
+      users: users.rows
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
