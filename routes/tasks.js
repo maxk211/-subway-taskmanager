@@ -77,7 +77,7 @@ router.get('/', authMiddleware, async (req, res) => {
       params.push(status);
     }
 
-    query += ' ORDER BY t.due_date DESC, t.shift, t.title';
+    query += ' ORDER BY t.due_date DESC, t.shift, tt.category, t.title';
 
     const tasks = await db.prepare(query).all(...params);
 

@@ -41,6 +41,50 @@ app.post('/api/generate-tasks', async (req, res) => {
   }
 });
 
+// Duplikate bereinigen
+app.post('/api/cleanup-duplicates', async (req, res) => {
+  try {
+    const result = await cleanupDuplicateTasks();
+    res.json({ success: true, message: 'Duplikate bereinigt', result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Funktion zum Bereinigen von Duplikaten
+async function cleanupDuplicateTasks() {
+  if (!process.env.DATABASE_URL) {
+    return { deleted: 0, message: 'SQLite - übersprungen' };
+  }
+
+  const { Pool } = require('pg');
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  });
+
+  const client = await pool.connect();
+
+  try {
+    // Lösche Duplikate: behalte nur den ersten Task pro (title, store_id, due_date, shift)
+    const result = await client.query(`
+      DELETE FROM tasks
+      WHERE id NOT IN (
+        SELECT MIN(id)
+        FROM tasks
+        GROUP BY title, store_id, due_date, shift
+      )
+    `);
+
+    console.log(`🧹 ${result.rowCount} doppelte Tasks gelöscht`);
+    return { deleted: result.rowCount };
+
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
 // Funktion zur Task-Generierung
 async function generateTasksForToday() {
   // Nur für PostgreSQL
@@ -95,11 +139,11 @@ async function generateTasksForToday() {
         const shifts = template.shift === 'beide' ? ['frueh', 'spaet'] : [template.shift];
 
         for (const shift of shifts) {
-          // Prüfe ob Task schon existiert
+          // Prüfe ob Task schon existiert (basierend auf Titel, nicht template_id)
           const existingResult = await client.query(`
             SELECT id FROM tasks
-            WHERE template_id = $1 AND store_id = $2 AND due_date = $3 AND shift = $4
-          `, [template.id, store.id, today, shift]);
+            WHERE title = $1 AND store_id = $2 AND due_date = $3 AND shift = $4
+          `, [template.title, store.id, today, shift]);
 
           if (existingResult.rows.length === 0) {
             await client.query(`
@@ -144,8 +188,9 @@ app.listen(PORT, async () => {
   ╚═══════════════════════════════════════╝
   `);
 
-  // Generiere Tasks beim Server-Start (mit Fehlerbehandlung)
+  // Bereinige Duplikate und generiere Tasks beim Server-Start
   try {
+    await cleanupDuplicateTasks();
     await generateTasksForToday();
   } catch (error) {
     console.error('Task-Generierung beim Start fehlgeschlagen:', error.message);
