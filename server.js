@@ -124,8 +124,13 @@ function getWeekInCycle(date = new Date()) {
 }
 
 // Task-Generierung für heute
+let lastGenerationResult = null;
+
 async function generateTasksForToday() {
-  if (!process.env.DATABASE_URL) return;
+  if (!process.env.DATABASE_URL) {
+    lastGenerationResult = { error: 'No DATABASE_URL' };
+    return;
+  }
 
   const { Pool } = require('pg');
   const pool = new Pool({
@@ -145,37 +150,60 @@ async function generateTasksForToday() {
     const storesResult = await pool.query('SELECT id, name FROM stores');
     const stores = storesResult.rows;
 
+    console.log(`🏪 ${stores.length} Stores gefunden`);
+
     // Filtere Tasks für heute
     const todaysTasks = weeklyCleaningTasks.filter(
       task => task.week === currentWeek && task.day === dayOfWeek
     );
 
-    console.log(`📋 ${todaysTasks.length} Aufgaben für heute gefunden`);
+    console.log(`📋 ${todaysTasks.length} Aufgaben für heute gefunden:`, todaysTasks.map(t => t.title));
 
     let totalCreated = 0;
+    let errors = [];
 
     for (const store of stores) {
       for (const task of todaysTasks) {
-        // Prüfe ob Task schon existiert
-        const existing = await pool.query(`
-          SELECT id FROM tasks
-          WHERE title = $1 AND store_id = $2 AND due_date = $3
-        `, [task.title, store.id, todayStr]);
+        try {
+          // Prüfe ob Task schon existiert
+          const existing = await pool.query(`
+            SELECT id FROM tasks
+            WHERE title = $1 AND store_id = $2 AND due_date = $3
+          `, [task.title, store.id, todayStr]);
 
-        if (existing.rows.length === 0) {
-          await pool.query(`
-            INSERT INTO tasks (store_id, title, description, shift, due_date, status)
-            VALUES ($1, $2, $3, 'frueh', $4, 'pending')
-          `, [store.id, task.title, task.category, todayStr]);
-          totalCreated++;
+          if (existing.rows.length === 0) {
+            await pool.query(`
+              INSERT INTO tasks (store_id, title, description, shift, due_date, status)
+              VALUES ($1, $2, $3, 'frueh', $4, 'pending')
+            `, [store.id, task.title, task.category || '', todayStr]);
+            totalCreated++;
+            console.log(`✓ Task erstellt: ${task.title} für ${store.name}`);
+          } else {
+            console.log(`⏭ Task existiert bereits: ${task.title} für ${store.name}`);
+          }
+        } catch (insertError) {
+          console.error(`❌ Fehler bei Task ${task.title} für ${store.name}:`, insertError.message);
+          errors.push({ task: task.title, store: store.name, error: insertError.message });
         }
       }
     }
 
     console.log(`✅ ${totalCreated} Tasks erstellt für ${stores.length} Stores`);
 
+    lastGenerationResult = {
+      success: true,
+      date: todayStr,
+      dayOfWeek,
+      currentWeek,
+      storesCount: stores.length,
+      tasksToCreate: todaysTasks.length,
+      totalCreated,
+      errors
+    };
+
   } catch (error) {
-    console.error('Task-Generierung Fehler:', error.message);
+    console.error('Task-Generierung Fehler:', error);
+    lastGenerationResult = { error: error.message, stack: error.stack };
   } finally {
     await pool.end();
   }
@@ -212,10 +240,15 @@ app.get('/health', (req, res) => {
 app.post('/api/generate-tasks', async (req, res) => {
   try {
     await generateTasksForToday();
-    res.json({ success: true, message: 'Tasks generiert' });
+    res.json({ success: true, message: 'Tasks generiert', result: lastGenerationResult });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// Letztes Generierungs-Ergebnis
+app.get('/api/generation-status', (req, res) => {
+  res.json(lastGenerationResult || { status: 'not run yet' });
 });
 
 // Debug-Endpoint: Zeige Tasks in DB
