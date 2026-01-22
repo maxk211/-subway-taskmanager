@@ -91,7 +91,7 @@ router.get('/', authMiddleware, async (req, res) => {
 // Aufgabe als erledigt markieren
 router.put('/:id/complete', authMiddleware, upload.single('photo'), async (req, res) => {
   try {
-    const { notes } = req.body;
+    const { notes, completed_by_id } = req.body;
     const taskId = req.params.id;
 
     const task = await db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
@@ -105,6 +105,16 @@ router.put('/:id/complete', authMiddleware, upload.single('photo'), async (req, 
       return res.status(403).json({ message: 'Keine Berechtigung' });
     }
 
+    // Wenn completed_by_id übergeben wurde, verwende diesen, sonst den eingeloggten User
+    let completedById = req.user.id;
+    if (completed_by_id) {
+      const employee = await db.prepare('SELECT id, store_id FROM users WHERE id = ?').get(completed_by_id);
+      if (!employee || employee.store_id !== task.store_id) {
+        return res.status(400).json({ message: 'Ungültiger Mitarbeiter' });
+      }
+      completedById = completed_by_id;
+    }
+
     const photoPath = req.file ? req.file.filename : null;
 
     await db.prepare(`
@@ -115,7 +125,7 @@ router.put('/:id/complete', authMiddleware, upload.single('photo'), async (req, 
           photo_path = ?,
           notes = ?
       WHERE id = ?
-    `).run(req.user.id, photoPath, notes, taskId);
+    `).run(completedById, photoPath, notes, taskId);
 
     const updatedTask = await db.prepare(`
       SELECT t.*, tt.category, tt.requires_photo,

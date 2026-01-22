@@ -106,6 +106,30 @@ router.put('/:id', authMiddleware, requireRole('admin', 'manager'), async (req, 
   }
 });
 
+// Mitarbeiter eines Stores abrufen (für Dropdown beim Task-Abhaken)
+router.get('/store/:storeId', authMiddleware, async (req, res) => {
+  try {
+    const storeId = req.params.storeId;
+
+    // Berechtigung prüfen - nur eigenen Store oder Admin
+    if (req.user.role !== 'admin' && req.user.store_id !== parseInt(storeId)) {
+      return res.status(403).json({ message: 'Keine Berechtigung' });
+    }
+
+    const users = await db.prepare(`
+      SELECT id, full_name
+      FROM users
+      WHERE store_id = ? AND active = 1
+      ORDER BY full_name
+    `).all(storeId);
+
+    res.json(users);
+  } catch (error) {
+    console.error('Store users error:', error);
+    res.status(500).json({ message: 'Serverfehler', error: error.message });
+  }
+});
+
 // Passwort ändern
 router.put('/:id/password', authMiddleware, async (req, res) => {
   try {

@@ -10,7 +10,8 @@ import {
   CameraIcon,
   DocumentTextIcon,
   PlusIcon,
-  XMarkIcon
+  XMarkIcon,
+  UserIcon
 } from '@heroicons/react/24/outline';
 
 const Tasks = () => {
@@ -23,6 +24,11 @@ const Tasks = () => {
   const [stores, setStores] = useState([]);
   const [completingTaskId, setCompletingTaskId] = useState(null);
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [taskToComplete, setTaskToComplete] = useState(null);
+  const [storeEmployees, setStoreEmployees] = useState([]);
+  const [selectedEmployee, setSelectedEmployee] = useState('');
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
@@ -64,11 +70,44 @@ const Tasks = () => {
     }
   };
 
-  const handleCompleteTask = async (taskId) => {
-    setCompletingTaskId(taskId);
+  const loadStoreEmployees = async (storeId) => {
+    setLoadingEmployees(true);
     try {
-      await api.put(`/tasks/${taskId}/complete`, {});
+      const response = await api.get(`/users/store/${storeId}`);
+      setStoreEmployees(response.data);
+    } catch (error) {
+      toast.error('Fehler beim Laden der Mitarbeiter');
+      setStoreEmployees([]);
+    } finally {
+      setLoadingEmployees(false);
+    }
+  };
+
+  const openCompleteModal = (task) => {
+    setTaskToComplete(task);
+    setSelectedEmployee('');
+    const storeId = task.store_id || selectedStore || user?.store_id;
+    if (storeId) {
+      loadStoreEmployees(storeId);
+    }
+    setShowCompleteModal(true);
+  };
+
+  const handleCompleteTask = async () => {
+    if (!selectedEmployee) {
+      toast.error('Bitte wähle einen Mitarbeiter aus');
+      return;
+    }
+
+    setCompletingTaskId(taskToComplete.id);
+    try {
+      await api.put(`/tasks/${taskToComplete.id}/complete`, {
+        completed_by_id: selectedEmployee
+      });
       toast.success('Aufgabe erledigt!');
+      setShowCompleteModal(false);
+      setTaskToComplete(null);
+      setSelectedEmployee('');
       loadTasks();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Fehler beim Abschließen');
@@ -253,16 +292,11 @@ const Tasks = () => {
 
             {task.status === 'pending' && (
               <button
-                onClick={() => handleCompleteTask(task.id)}
-                disabled={completingTaskId === task.id}
-                className="w-full mt-4 inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-subway-green hover:bg-subway-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-subway-green disabled:opacity-50"
+                onClick={() => openCompleteModal(task)}
+                className="w-full mt-4 inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-subway-green hover:bg-subway-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-subway-green"
               >
-                {completingTaskId === task.id ? (
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                ) : (
-                  <CheckCircleIcon className="h-5 w-5 mr-2" />
-                )}
-                {completingTaskId === task.id ? 'Wird gespeichert...' : 'Erledigt'}
+                <CheckCircleIcon className="h-5 w-5 mr-2" />
+                Erledigt
               </button>
             )}
           </div>
@@ -365,6 +399,92 @@ const Tasks = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Aufgabe erledigen Modal */}
+      {showCompleteModal && taskToComplete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Aufgabe erledigen</h2>
+              <button
+                onClick={() => {
+                  setShowCompleteModal(false);
+                  setTaskToComplete(null);
+                  setSelectedEmployee('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                <h3 className="font-semibold text-gray-900">{taskToComplete.title}</h3>
+                {taskToComplete.description && (
+                  <p className="text-sm text-gray-600 mt-1">{taskToComplete.description}</p>
+                )}
+              </div>
+
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                <UserIcon className="h-5 w-5 inline mr-2" />
+                Wer hat diese Aufgabe erledigt?
+              </label>
+
+              {loadingEmployees ? (
+                <div className="flex items-center justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-subway-green"></div>
+                </div>
+              ) : (
+                <select
+                  value={selectedEmployee}
+                  onChange={(e) => setSelectedEmployee(e.target.value)}
+                  className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-subway-green focus:border-transparent text-lg"
+                >
+                  <option value="">-- Mitarbeiter auswählen --</option>
+                  {storeEmployees.map(emp => (
+                    <option key={emp.id} value={emp.id}>{emp.full_name}</option>
+                  ))}
+                </select>
+              )}
+
+              {storeEmployees.length === 0 && !loadingEmployees && (
+                <p className="text-sm text-red-500 mt-2">
+                  Keine Mitarbeiter für diesen Store gefunden. Bitte erst Mitarbeiter anlegen.
+                </p>
+              )}
+            </div>
+
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCompleteModal(false);
+                  setTaskToComplete(null);
+                  setSelectedEmployee('');
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleCompleteTask}
+                disabled={!selectedEmployee || completingTaskId}
+                className="px-4 py-2 bg-subway-green text-white rounded-lg hover:bg-subway-dark disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {completingTaskId ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block mr-2"></div>
+                    Wird gespeichert...
+                  </>
+                ) : (
+                  'Bestätigen'
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
