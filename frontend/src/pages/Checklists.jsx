@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  CheckCircleIcon,
   ClipboardDocumentCheckIcon,
   SunIcon,
   ClockIcon,
@@ -112,6 +111,11 @@ const checklistData = {
   }
 };
 
+const getTodayString = () => {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+};
+
 const Checklists = () => {
   const [checkedItems, setCheckedItems] = useState({
     frueh: {},
@@ -119,6 +123,33 @@ const Checklists = () => {
     spaet: {}
   });
   const [expandedList, setExpandedList] = useState('frueh');
+
+  // Lade gespeicherten Zustand beim Start, setze zurück wenn neuer Tag
+  useEffect(() => {
+    const savedData = localStorage.getItem('subway-checklists');
+    if (savedData) {
+      const parsed = JSON.parse(savedData);
+      if (parsed.date === getTodayString()) {
+        setCheckedItems(parsed.items);
+      } else {
+        // Neuer Tag - zurücksetzen
+        localStorage.removeItem('subway-checklists');
+      }
+    }
+  }, []);
+
+  // Speichere Änderungen in localStorage
+  useEffect(() => {
+    const hasAnyChecked = Object.values(checkedItems).some(
+      list => Object.keys(list).length > 0
+    );
+    if (hasAnyChecked) {
+      localStorage.setItem('subway-checklists', JSON.stringify({
+        date: getTodayString(),
+        items: checkedItems
+      }));
+    }
+  }, [checkedItems]);
 
   const toggleItem = (listKey, index) => {
     setCheckedItems(prev => ({
@@ -253,20 +284,26 @@ const Checklists = () => {
               </div>
 
               {/* Checklist Items */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-2">
                 {list.items.map((item, index) => {
                   const isChecked = checkedItems[key][index];
+                  const itemNumber = index + 1;
 
                   return (
                     <div
                       key={index}
                       onClick={() => toggleItem(key, index)}
-                      className={`flex items-center p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                      className={`flex items-center p-3 rounded-lg border-2 cursor-pointer transition-all ${
                         isChecked
                           ? 'bg-green-50 border-green-300'
                           : `bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm`
                       }`}
                     >
+                      <div className="flex-shrink-0 mr-3 w-8 text-center">
+                        <span className={`text-sm font-medium ${isChecked ? 'text-green-600' : 'text-gray-400'}`}>
+                          {itemNumber}.
+                        </span>
+                      </div>
                       <div className="flex-shrink-0 mr-3">
                         {isChecked ? (
                           <CheckCircleSolidIcon className="h-6 w-6 text-green-500" />
@@ -281,21 +318,6 @@ const Checklists = () => {
                   );
                 })}
               </div>
-
-              {/* Completion Message */}
-              {progress.percentage === 100 && (
-                <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <div className="flex items-center">
-                    <CheckCircleSolidIcon className="h-6 w-6 text-green-500 mr-3" />
-                    <div>
-                      <p className="font-semibold text-green-800">Alle Aufgaben erledigt!</p>
-                      <p className="text-sm text-green-600">
-                        Die {list.name}-Checkliste ist vollständig abgearbeitet.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           );
         })}
@@ -309,7 +331,7 @@ const Checklists = () => {
             <h3 className="font-semibold text-gray-900">Hinweis</h3>
             <p className="text-sm text-gray-600 mt-1">
               Diese Checklisten dienen als tägliche Orientierung für die Schichtaufgaben.
-              Die Markierungen werden nicht gespeichert und setzen sich beim Neuladen zurück.
+              Die Markierungen werden jeden Tag automatisch zurückgesetzt.
             </p>
           </div>
         </div>
