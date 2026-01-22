@@ -9,7 +9,10 @@ import {
   ClockIcon,
   XCircleIcon,
   BuildingStorefrontIcon,
-  UserIcon
+  UserIcon,
+  TrophyIcon,
+  ArrowTrendingUpIcon,
+  ArrowTrendingDownIcon
 } from '@heroicons/react/24/outline';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
@@ -202,6 +205,74 @@ const Dashboard = () => {
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Store Ranking */}
+      {isAdmin && stats?.storeStats?.length > 0 && (
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center">
+              <TrophyIcon className="h-6 w-6 text-yellow-500 mr-2" />
+              <h2 className="text-lg font-semibold text-gray-900">Store Ranking</h2>
+            </div>
+            <p className="text-sm text-gray-500 mt-1">Sortiert nach Erledigungsrate</p>
+          </div>
+          <div className="p-6">
+            <div className="space-y-4">
+              {[...stats.storeStats]
+                .sort((a, b) => (b.completion_rate || 0) - (a.completion_rate || 0))
+                .map((store, index) => {
+                  const rate = store.completion_rate || 0;
+                  const isTop3 = index < 3;
+                  const medalColors = ['bg-yellow-400', 'bg-gray-300', 'bg-amber-600'];
+
+                  return (
+                    <div key={store.id} className={`flex items-center p-4 rounded-lg ${isTop3 ? 'bg-green-50 border border-green-200' : 'bg-gray-50'}`}>
+                      {/* Rank */}
+                      <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${isTop3 ? medalColors[index] : 'bg-gray-400'}`}>
+                        {index + 1}
+                      </div>
+
+                      {/* Store Info */}
+                      <div className="ml-4 flex-1">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="font-semibold text-gray-900">{store.name}</h3>
+                            <p className="text-sm text-gray-500">
+                              {store.completed_tasks || 0} von {store.total_tasks || 0} erledigt
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <div className={`text-2xl font-bold ${rate >= 80 ? 'text-green-600' : rate >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                              {rate}%
+                            </div>
+                            <div className="flex items-center text-sm">
+                              {rate >= 80 ? (
+                                <ArrowTrendingUpIcon className="h-4 w-4 text-green-500 mr-1" />
+                              ) : rate < 50 ? (
+                                <ArrowTrendingDownIcon className="h-4 w-4 text-red-500 mr-1" />
+                              ) : null}
+                              <span className={rate >= 80 ? 'text-green-600' : rate < 50 ? 'text-red-600' : 'text-yellow-600'}>
+                                {rate >= 80 ? 'Sehr gut' : rate >= 50 ? 'Akzeptabel' : 'Verbesserung nötig'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full transition-all duration-500 ${rate >= 80 ? 'bg-green-500' : rate >= 50 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                            style={{ width: `${rate}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top Mitarbeiter */}
       <div className="bg-white rounded-lg shadow">
