@@ -6,6 +6,7 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Tasks from './pages/Tasks';
+import Checklists from './pages/Checklists';
 import Reports from './pages/Reports';
 import Employees from './pages/Employees';
 
@@ -74,6 +75,15 @@ function App() {
               element={
                 <PrivateRoute>
                   <Tasks />
+                </PrivateRoute>
+              }
+            />
+
+            <Route
+              path="/checklists"
+              element={
+                <PrivateRoute>
+                  <Checklists />
                 </PrivateRoute>
               }
             />

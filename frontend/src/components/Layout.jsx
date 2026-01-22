@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   HomeIcon,
   ClipboardDocumentListIcon,
+  ClipboardDocumentCheckIcon,
   BuildingStorefrontIcon,
   UsersIcon,
   ArrowRightOnRectangleIcon,
@@ -24,6 +25,7 @@ const Layout = ({ children }) => {
   const navigation = [
     { name: 'Dashboard', href: '/', icon: HomeIcon, roles: ['admin', 'manager'] },
     { name: 'Meine Aufgaben', href: '/tasks', icon: ClipboardDocumentListIcon, roles: ['admin', 'manager', 'employee'] },
+    { name: 'Checklisten', href: '/checklists', icon: ClipboardDocumentCheckIcon, roles: ['admin', 'manager', 'employee'] },
     { name: 'Mitarbeiter', href: '/employees', icon: UsersIcon, roles: ['admin', 'manager'] },
     { name: 'Reports', href: '/reports', icon: DocumentArrowDownIcon, roles: ['admin', 'manager'] },
   ];
